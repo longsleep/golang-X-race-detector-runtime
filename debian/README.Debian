@@ -1,0 +1,40 @@
+Runtime support for Go's race detector
+--------------------------------------
+
+The instructions in the Go source:
+
+    https://go.googlesource.com/go/+/master/src/runtime/race/README
+
+that describe how to build the race detector runtime support from
+say you should run this script:
+
+    https://go.googlesource.com/build/+/master/cmd/racebuild/racebuild.go
+
+We can't do that on a builder, but the build steps executed on linux
+are here:
+
+    https://go.googlesource.com/build/+/8e13b5024cd66cf568a9cc4b0ed3a64abaa80aae/cmd/racebuild/racebuild.go#67
+
+The race detector depends on runtime support from the
+"compiler-rt" runtime libraries (http://compiler-rt.llvm.org/),
+specifically the ThreadSanitizer (aka "tsan") library. The Go source
+distribution includes this support as a built object file which
+obviously violates the principle of knowing that the binaries are
+actually produced from the source they claim to be, hence this
+package.
+
+The Go instructions also refer to a specific Git revision from the git
+mirror (389d49d4943780efbfcd2a434f4462b6d0f23c44). It can be seen that
+this maps to the correct subversion revision (252922) at:
+
+    https://github.com/llvm-mirror/compiler-rt/commit/389d49d4943780efbfcd2a434f4462b6d0f23c44
+
+The compiler-rt source is included in other source packages (at least
+gcc and llvm-toolchain) but I created one specifically for this task
+so that we can use the same revision of the compiler-rt source as the
+currently packaged version of Go.
+
+This all means that building this package only uses a relatively small
+part of the source that it distributes -- for example, it doesn't
+execute the full testsuite, just the small part that is run by the
+buildgo.sh script.

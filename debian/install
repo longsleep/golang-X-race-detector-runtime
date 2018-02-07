@@ -1,0 +1,2 @@
+#!/usr/bin/dh-exec
+lib/tsan/go/race_linux_amd64.syso usr/lib/go-${GOVER}/src/runtime/race

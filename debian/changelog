@@ -1,0 +1,60 @@
+golang-1.10-race-detector-runtime (0.0+svn285455-0ubuntu1) bionic; urgency=medium
+
+  * Build for Go 1.10 (same version as 1.8 and 1.9 again).
+  * Replace Priority: extra with Priority: optional.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Wed, 07 Feb 2018 23:07:23 +1300
+
+golang-1.9-race-detector-runtime (0.0+svn285455-0ubuntu1) artful; urgency=medium
+
+  * Build for Go 1.9 (same version as 1.8 this time).
+  * Add d/patches/0002-fix-sanitizer-build-against-latest-glibc.patch to fix
+    ftbfs.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Mon, 09 Oct 2017 14:04:14 +1300
+
+golang-1.8-race-detector-runtime (0.0+svn285455-0ubuntu1) zesty; urgency=medium
+
+  * Update to version used by Go 1.8.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Fri, 20 Jan 2017 10:02:20 +1300
+
+golang-1.7-race-detector-runtime (0.0+svn267730-0ubuntu1) yakkety; urgency=medium
+
+  * Update to version used by Go 1.7.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Tue, 07 Jun 2016 14:55:37 +1200
+
+golang-1.6-race-detector-runtime (0.0+svn252922-0ubuntu2) yakkety; urgency=medium
+
+  * Fix ftbfs:
+    - Set DEB_LDFLAGS_MAINT_APPEND=-no-pie on 16.04 and newer.
+    - Add d/patches/0001-respect-LDFLAGS-linking-test.patch so the above takes
+      effect.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Mon, 02 May 2016 13:06:29 +1200
+
+golang-1.6-race-detector-runtime (0.0+svn252922-0ubuntu1) xenial; urgency=medium
+
+  * Install to Go-version specific location.
+
+ -- Michael Hudson-Doyle <michael.hudson@canonical.com>  Tue, 08 Mar 2016 16:10:52 +1300
+
+golang-race-detector-runtime (0.0+svn252922-0ubuntu2) xenial; urgency=medium
+
+  * Install to /usr/share rather than /usr/lib, to make uninstallation work
+    properly. (LP: #1554401)
+
+ -- Michael Hudson-Doyle <michael.hudson@canonical.com>  Tue, 08 Mar 2016 21:14:01 +1300
+
+golang-race-detector-runtime (0.0+svn252922-0ubuntu1) xenial; urgency=medium
+
+  * Update to version used by Go 1.6. (LP: 1535511)
+
+ -- Michael Hudson-Doyle <michael.hudson@canonical.com>  Tue, 19 Jan 2016 15:28:48 +1300
+
+golang-race-detector-runtime (0.0+svn229396-0ubuntu1) wily; urgency=medium
+
+  * Initial release. (LP: #1487010)
+
+ -- Michael Hudson-Doyle <michael.hudson@canonical.com>  Thu, 10 Sep 2015 13:00:00 +1200

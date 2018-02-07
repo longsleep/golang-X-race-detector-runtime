@@ -1,0 +1,2 @@
+0001-respect-LDFLAGS-linking-test.patch
+0002-fix-sanitizer-build-against-latest-glibc.patch

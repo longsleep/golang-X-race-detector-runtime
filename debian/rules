@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export DH_VERBOSE=1
+
+PKG  = $(shell dpkg-parsechangelog -l$(PKD)/changelog --show-field=Source)
+export GOVER = $(shell echo $(PKG) | sed -n -e 's/golang-\([0-9]\+\.[0-9]\+\).*/\1/p')
+
+# This *should* be DEB_BUILD_{MAINT_,}OPTIONS=hardening=-pie, but that doesn't work,
+# see https://bugs.launchpad.net/ubuntu/+source/dpkg/+bug/1576915
+SUPPORTS_NOPIE := $(shell . /etc/lsb-release; [ $$DISTRIB_RELEASE \< 16.04 ] && echo no || echo yes)
+ifeq ($(SUPPORTS_NOPIE),yes)
+export DEB_LDFLAGS_MAINT_APPEND=-no-pie
+endif
+
+override_dh_auto_clean:
+	cd lib/tsan/go && rm -f test gotsan.cc race_linux_amd64.syso
+
+override_dh_auto_test:
+	# buildgo.sh includes tests for the the part of the library
+	# that we are actually using.
+	:
+
+override_dh_auto_configure:
+	:
+
+override_dh_auto_install:
+	:
+
+override_dh_strip:
+	:
+
+override_dh_auto_build:
+	cd lib/tsan/go && ./buildgo.sh
+
+PKD  = $(abspath $(dir $(MAKEFILE_LIST)))
+PKG  = $(shell dpkg-parsechangelog -l$(PKD)/changelog --show-field=Source)
+REVNO = $(shell dpkg-parsechangelog  -SVersion | sed -e 's/.*svn\([0-9]\+\)-.*/\1/')
+
+get-orig-source:
+	svn co http://llvm.org/svn/llvm-project/compiler-rt/trunk compiler-rt
+	cd compiler-rt && svn export -r $(REVNO) . "../$(PKG)_0.0+svn$(REVNO)"
+	tar czf $(PKG)_0.0+svn$(REVNO).orig.tar.gz $(PKG)_0.0+svn$(REVNO)
+	rm -rf compiler-rt $(PKG)_0.0+svn$(REVNO)
+
+%:
+	dh $@
+
+.PHONY: get-orig-source

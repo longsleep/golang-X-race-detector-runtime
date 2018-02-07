@@ -1,0 +1,16 @@
+Source: golang-1.10-race-detector-runtime
+Section: devel
+Priority: optional
+Maintainer: Michael Hudson-Doyle <michael.hudson@ubuntu.com>
+Build-Depends: debhelper (>= 9), dpkg-dev (>= 1.17), dh-exec
+Standards-Version: 3.9.6
+
+Package: golang-1.10-race-detector-runtime
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: Runtime support for Go's race detector
+ The runtime support for the race detector is included as a binary
+ file in the go source distribution so this package exists to build it
+ from source on trusted infrastructure.
+ .
+ Installing this package will make the -race flag to the go tool functional.

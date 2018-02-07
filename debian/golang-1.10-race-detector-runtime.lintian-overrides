@@ -1,0 +1,2 @@
+# The syso file must not be stripped.
+golang-1.10-race-detector-runtime binary: unstripped-binary-or-object usr/lib/go-1.10/src/runtime/race/race_linux_amd64.syso
