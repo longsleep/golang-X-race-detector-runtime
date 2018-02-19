@@ -1,3 +1,9 @@
+golang-1.10-race-detector-runtime (0.0+svn285455-0ubuntu1~longsleep1+xenial) xenial; urgency=medium
+
+  * Rebuild for xenial ppa.
+
+ -- Simon Eisenmann <simon@longsleep.org>  Mon, 19 Feb 2018 11:54:25 +0100
+
 golang-1.10-race-detector-runtime (0.0+svn285455-0ubuntu1) bionic; urgency=medium
 
   * Build for Go 1.10 (same version as 1.8 and 1.9 again).
