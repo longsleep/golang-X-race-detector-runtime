@@ -24,10 +24,10 @@ actually produced from the source they claim to be, hence this
 package.
 
 The Go instructions also refer to a specific Git revision from the git
-mirror (389d49d4943780efbfcd2a434f4462b6d0f23c44). It can be seen that
-this maps to the correct subversion revision (252922) at:
+mirror (fe2c72c59aa7f4afa45e3f65a5d16a374b6cce26). It can be seen that
+this maps to the correct subversion revision (332029) at:
 
-    https://github.com/llvm-mirror/compiler-rt/commit/389d49d4943780efbfcd2a434f4462b6d0f23c44
+    https://github.com/llvm-mirror/compiler-rt/commit/fe2c72c59aa7f4afa45e3f65a5d16a374b6cce26
 
 The compiler-rt source is included in other source packages (at least
 gcc and llvm-toolchain) but I created one specifically for this task

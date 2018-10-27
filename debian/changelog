@@ -1,3 +1,10 @@
+golang-1.11-race-detector-runtime (0.0+svn332029-0ubuntu1~longsleep1+xenial) xenial; urgency=medium
+
+  * Build for Go 1.11.
+  * Update to compiler-rt fe2c72. 
+
+ -- Simon Eisenmann <simon@longsleep.org>  Sat, 27 Oct 2018 13:22:00 +0200
+
 golang-1.10-race-detector-runtime (0.0+svn285455-0ubuntu1~longsleep1+xenial) xenial; urgency=medium
 
   * Rebuild for xenial ppa.
