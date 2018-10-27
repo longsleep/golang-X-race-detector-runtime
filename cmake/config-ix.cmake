@@ -1,4 +1,5 @@
 include(CMakePushCheckState)
+include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 include(CheckLibraryExists)
 include(CheckSymbolExists)
@@ -10,6 +11,32 @@ function(check_linker_flag flag out_var)
   check_cxx_compiler_flag("" ${out_var})
   cmake_pop_check_state()
 endfunction()
+
+check_library_exists(c fopen "" COMPILER_RT_HAS_LIBC)
+if (NOT SANITIZER_USE_COMPILER_RT)
+  if (ANDROID)
+    check_library_exists(gcc __gcc_personality_v0 "" COMPILER_RT_HAS_GCC_LIB)
+  else()
+    check_library_exists(gcc_s __gcc_personality_v0 "" COMPILER_RT_HAS_GCC_S_LIB)
+  endif()
+endif()
+
+check_c_compiler_flag(-nodefaultlibs COMPILER_RT_HAS_NODEFAULTLIBS_FLAG)
+if (COMPILER_RT_HAS_NODEFAULTLIBS_FLAG)
+  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -nodefaultlibs")
+  if (COMPILER_RT_HAS_LIBC)
+    list(APPEND CMAKE_REQUIRED_LIBRARIES c)
+  endif ()
+  if (SANITIZER_USE_COMPILER_RT)
+    list(APPEND CMAKE_REQUIRED_FLAGS -rtlib=compiler-rt)
+    find_compiler_rt_library(builtins COMPILER_RT_BUILTINS_LIBRARY)
+    list(APPEND CMAKE_REQUIRED_LIBRARIES "${COMPILER_RT_BUILTINS_LIBRARY}")
+  elseif (COMPILER_RT_HAS_GCC_S_LIB)
+    list(APPEND CMAKE_REQUIRED_LIBRARIES gcc_s)
+  elseif (COMPILER_RT_HAS_GCC_LIB)
+    list(APPEND CMAKE_REQUIRED_LIBRARIES gcc)
+  endif ()
+endif ()
 
 # CodeGen options.
 check_cxx_compiler_flag(-fPIC                COMPILER_RT_HAS_FPIC_FLAG)
@@ -29,7 +56,9 @@ check_cxx_compiler_flag(-std=c++11           COMPILER_RT_HAS_STD_CXX11_FLAG)
 check_cxx_compiler_flag(-ftls-model=initial-exec COMPILER_RT_HAS_FTLS_MODEL_INITIAL_EXEC)
 check_cxx_compiler_flag(-fno-lto             COMPILER_RT_HAS_FNO_LTO_FLAG)
 check_cxx_compiler_flag("-Werror -msse3" COMPILER_RT_HAS_MSSE3_FLAG)
+check_cxx_compiler_flag("-Werror -msse4.2"   COMPILER_RT_HAS_MSSE4_2_FLAG)
 check_cxx_compiler_flag(--sysroot=.          COMPILER_RT_HAS_SYSROOT_FLAG)
+check_cxx_compiler_flag("-Werror -mcrc"      COMPILER_RT_HAS_MCRC_FLAG)
 
 if(NOT WIN32 AND NOT CYGWIN)
   # MinGW warns if -fvisibility-inlines-hidden is used.
@@ -56,6 +85,7 @@ check_cxx_compiler_flag("-Werror -Wgnu"                COMPILER_RT_HAS_WGNU_FLAG
 check_cxx_compiler_flag("-Werror -Wnon-virtual-dtor"   COMPILER_RT_HAS_WNON_VIRTUAL_DTOR_FLAG)
 check_cxx_compiler_flag("-Werror -Wvariadic-macros"    COMPILER_RT_HAS_WVARIADIC_MACROS_FLAG)
 check_cxx_compiler_flag("-Werror -Wunused-parameter"   COMPILER_RT_HAS_WUNUSED_PARAMETER_FLAG)
+check_cxx_compiler_flag("-Werror -Wcovered-switch-default" COMPILER_RT_HAS_WCOVERED_SWITCH_DEFAULT_FLAG)
 
 check_cxx_compiler_flag(/W4 COMPILER_RT_HAS_W4_FLAG)
 check_cxx_compiler_flag(/WX COMPILER_RT_HAS_WX_FLAG)
@@ -70,11 +100,14 @@ check_cxx_compiler_flag(/wd4800 COMPILER_RT_HAS_WD4800_FLAG)
 check_symbol_exists(__func__ "" COMPILER_RT_HAS_FUNC_SYMBOL)
 
 # Libraries.
-check_library_exists(c fopen "" COMPILER_RT_HAS_LIBC)
 check_library_exists(dl dlopen "" COMPILER_RT_HAS_LIBDL)
 check_library_exists(rt shm_open "" COMPILER_RT_HAS_LIBRT)
 check_library_exists(m pow "" COMPILER_RT_HAS_LIBM)
 check_library_exists(pthread pthread_create "" COMPILER_RT_HAS_LIBPTHREAD)
+if (ANDROID AND COMPILER_RT_HAS_LIBDL)
+  # Android's libstdc++ has a dependency on libdl.
+  list(APPEND CMAKE_REQUIRED_LIBRARIES dl)
+endif()
 check_library_exists(stdc++ __cxa_throw "" COMPILER_RT_HAS_LIBSTDCXX)
 
 # Linker flags.
@@ -94,13 +127,6 @@ set(COMPILER_RT_SUPPORTED_ARCH)
 # abilities.
 set(SIMPLE_SOURCE ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple.cc)
 file(WRITE ${SIMPLE_SOURCE} "#include <stdlib.h>\n#include <stdio.h>\nint main() { printf(\"hello, world\"); }\n")
-
-# Add $arch as supported with no additional flags.
-macro(add_default_target_arch arch)
-  set(TARGET_${arch}_CFLAGS "")
-  set(CAN_TARGET_${arch} 1)
-  list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
-endmacro()
 
 # Detect whether the current target platform is 32-bit or 64-bit, and setup
 # the correct commandline flags needed to attempt to target 32-bit and 64-bit.
@@ -128,13 +154,34 @@ function(get_target_flags_for_arch arch out_var)
   endif()
 endfunction()
 
+# Returns a compiler and CFLAGS that should be used to run tests for the
+# specific architecture.  When cross-compiling, this is controled via
+# COMPILER_RT_TEST_COMPILER and COMPILER_RT_TEST_COMPILER_CFLAGS.
+macro(get_test_cc_for_arch arch cc_out cflags_out)
+  if(ANDROID OR ${arch} MATCHES "arm|aarch64")
+    # This is only true if we are cross-compiling.
+    # Build all tests with host compiler and use host tools.
+    set(${cc_out} ${COMPILER_RT_TEST_COMPILER})
+    set(${cflags_out} ${COMPILER_RT_TEST_COMPILER_CFLAGS})
+  else()
+    get_target_flags_for_arch(${arch} ${cflags_out})
+    if(APPLE)
+      list(APPEND ${cflags_out} ${DARWIN_osx_CFLAGS})
+    endif()
+    string(REPLACE ";" " " ${cflags_out} "${${cflags_out}}")
+  endif()
+endmacro()
+
 set(ARM64 aarch64)
 set(ARM32 arm armhf)
-set(X86 i386 i686)
+set(HEXAGON hexagon)
+set(X86 i386)
 set(X86_64 x86_64)
 set(MIPS32 mips mipsel)
 set(MIPS64 mips64 mips64el)
 set(PPC64 powerpc64 powerpc64le)
+set(RISCV32 riscv32)
+set(RISCV64 riscv64)
 set(S390X s390x)
 set(WASM32 wasm32)
 set(WASM64 wasm64)
@@ -148,20 +195,32 @@ endif()
 set(ALL_SANITIZER_COMMON_SUPPORTED_ARCH ${X86} ${X86_64} ${PPC64}
     ${ARM32} ${ARM64} ${MIPS32} ${MIPS64} ${S390X})
 set(ALL_ASAN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
-    ${MIPS32} ${MIPS64} ${PPC64})
+    ${MIPS32} ${MIPS64} ${PPC64} ${S390X})
 set(ALL_DFSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64})
-set(ALL_LSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64})
+set(ALL_FUZZER_SUPPORTED_ARCH x86_64)
+
+if(APPLE)
+  set(ALL_LSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64})
+else()
+  set(ALL_LSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64} ${ARM32} ${PPC64})
+endif()
 set(ALL_MSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64} ${PPC64})
+set(ALL_HWASAN_SUPPORTED_ARCH ${X86_64} ${ARM64})
 set(ALL_PROFILE_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${PPC64}
-    ${MIPS32} ${MIPS64})
+    ${MIPS32} ${MIPS64} ${S390X})
 set(ALL_TSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64} ${PPC64})
 set(ALL_UBSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
     ${MIPS32} ${MIPS64} ${PPC64} ${S390X})
 set(ALL_SAFESTACK_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM64} ${MIPS32} ${MIPS64})
-set(ALL_CFI_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64})
+set(ALL_CFI_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${MIPS64})
 set(ALL_ESAN_SUPPORTED_ARCH ${X86_64} ${MIPS64})
-set(ALL_SCUDO_SUPPORTED_ARCH ${X86_64})
-set(ALL_XRAY_SUPPORTED_ARCH ${X86_64} ${ARM32})
+set(ALL_SCUDO_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${MIPS32} ${MIPS64})
+if(APPLE)
+set(ALL_XRAY_SUPPORTED_ARCH ${X86_64})
+else()
+set(ALL_XRAY_SUPPORTED_ARCH ${X86_64} ${ARM32} ${ARM64} ${MIPS32} ${MIPS64} powerpc64le)
+endif()
+set(ALL_SHADOWCALLSTACK_SUPPORTED_ARCH ${X86_64} ${ARM64})
 
 if(APPLE)
   include(CompilerRTDarwinUtils)
@@ -186,7 +245,7 @@ if(APPLE)
     list(APPEND DARWIN_EMBEDDED_PLATFORMS ios)
     set(DARWIN_ios_MIN_VER_FLAG -miphoneos-version-min)
     set(DARWIN_ios_SANITIZER_MIN_VER_FLAG
-      ${DARWIN_ios_MIN_VER_FLAG}=7.0)
+      ${DARWIN_ios_MIN_VER_FLAG}=8.0)
   endif()
   if(COMPILER_RT_ENABLE_WATCHOS)
     list(APPEND DARWIN_EMBEDDED_PLATFORMS watchos)
@@ -206,6 +265,7 @@ if(APPLE)
   set(SANITIZER_COMMON_SUPPORTED_OS osx)
   set(PROFILE_SUPPORTED_OS osx)
   set(TSAN_SUPPORTED_OS osx)
+  set(XRAY_SUPPORTED_OS osx)
   if(NOT SANITIZER_MIN_OSX_VERSION)
     string(REGEX MATCH "-mmacosx-version-min=([.0-9]+)"
            MACOSX_VERSION_MIN_FLAG "${CMAKE_CXX_FLAGS}")
@@ -217,7 +277,11 @@ if(APPLE)
       set(SANITIZER_MIN_OSX_VERSION 10.9)
     endif()
     if(SANITIZER_MIN_OSX_VERSION VERSION_LESS "10.7")
-      message(FATAL_ERROR "Too old OS X version: ${SANITIZER_MIN_OSX_VERSION}")
+      message(FATAL_ERROR "macOS deployment target '${SANITIZER_MIN_OSX_VERSION}' is too old.")
+    endif()
+    if(SANITIZER_MIN_OSX_VERSION VERSION_GREATER "10.9")
+      message(WARNING "macOS deployment target '${SANITIZER_MIN_OSX_VERSION}' is too new, setting to '10.9' instead.")
+      set(SANITIZER_MIN_OSX_VERSION 10.9)
     endif()
   endif()
 
@@ -225,26 +289,26 @@ if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "")
   
   set(DARWIN_COMMON_CFLAGS -stdlib=libc++)
-  set(DARWIN_COMMON_LINKFLAGS
+  set(DARWIN_COMMON_LINK_FLAGS
     -stdlib=libc++
     -lc++
     -lc++abi)
   
   check_linker_flag("-fapplication-extension" COMPILER_RT_HAS_APP_EXTENSION)
   if(COMPILER_RT_HAS_APP_EXTENSION)
-    list(APPEND DARWIN_COMMON_LINKFLAGS "-fapplication-extension")
+    list(APPEND DARWIN_COMMON_LINK_FLAGS "-fapplication-extension")
   endif()
 
   set(DARWIN_osx_CFLAGS
     ${DARWIN_COMMON_CFLAGS}
     -mmacosx-version-min=${SANITIZER_MIN_OSX_VERSION})
-  set(DARWIN_osx_LINKFLAGS
-    ${DARWIN_COMMON_LINKFLAGS}
+  set(DARWIN_osx_LINK_FLAGS
+    ${DARWIN_COMMON_LINK_FLAGS}
     -mmacosx-version-min=${SANITIZER_MIN_OSX_VERSION})
 
   if(DARWIN_osx_SYSROOT)
     list(APPEND DARWIN_osx_CFLAGS -isysroot ${DARWIN_osx_SYSROOT})
-    list(APPEND DARWIN_osx_LINKFLAGS -isysroot ${DARWIN_osx_SYSROOT})
+    list(APPEND DARWIN_osx_LINK_FLAGS -isysroot ${DARWIN_osx_SYSROOT})
   endif()
 
   # Figure out which arches to use for each OS
@@ -267,8 +331,8 @@ if(APPLE)
           ${DARWIN_COMMON_CFLAGS}
           ${DARWIN_${platform}_SANITIZER_MIN_VER_FLAG}
           -isysroot ${DARWIN_${platform}sim_SYSROOT})
-        set(DARWIN_${platform}sim_LINKFLAGS
-          ${DARWIN_COMMON_LINKFLAGS}
+        set(DARWIN_${platform}sim_LINK_FLAGS
+          ${DARWIN_COMMON_LINK_FLAGS}
           ${DARWIN_${platform}_SANITIZER_MIN_VER_FLAG}
           -isysroot ${DARWIN_${platform}sim_SYSROOT})
 
@@ -280,9 +344,7 @@ if(APPLE)
         if(DARWIN_${platform}sim_ARCHS)
           list(APPEND SANITIZER_COMMON_SUPPORTED_OS ${platform}sim)
           list(APPEND PROFILE_SUPPORTED_OS ${platform}sim)
-          if(DARWIN_${platform}_SYSROOT_INTERNAL)
-            list(APPEND TSAN_SUPPORTED_OS ${platform}sim)
-          endif()
+          list(APPEND TSAN_SUPPORTED_OS ${platform}sim)
         endif()
         foreach(arch ${DARWIN_${platform}sim_ARCHS})
           list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
@@ -295,8 +357,8 @@ if(APPLE)
           ${DARWIN_COMMON_CFLAGS}
           ${DARWIN_${platform}_SANITIZER_MIN_VER_FLAG}
           -isysroot ${DARWIN_${platform}_SYSROOT})
-        set(DARWIN_${platform}_LINKFLAGS
-          ${DARWIN_COMMON_LINKFLAGS}
+        set(DARWIN_${platform}_LINK_FLAGS
+          ${DARWIN_COMMON_LINK_FLAGS}
           ${DARWIN_${platform}_SANITIZER_MIN_VER_FLAG}
           -isysroot ${DARWIN_${platform}_SYSROOT})
 
@@ -307,6 +369,7 @@ if(APPLE)
         if(DARWIN_${platform}_ARCHS)
           list(APPEND SANITIZER_COMMON_SUPPORTED_OS ${platform})
           list(APPEND PROFILE_SUPPORTED_OS ${platform})
+          list(APPEND TSAN_SUPPORTED_OS ${platform})
         endif()
         foreach(arch ${DARWIN_${platform}_ARCHS})
           list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
@@ -338,6 +401,9 @@ if(APPLE)
   list_intersect(MSAN_SUPPORTED_ARCH
     ALL_MSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(HWASAN_SUPPORTED_ARCH
+    ALL_HWASAN_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(PROFILE_SUPPORTED_ARCH
     ALL_PROFILE_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
@@ -359,9 +425,16 @@ if(APPLE)
   list_intersect(SCUDO_SUPPORTED_ARCH
     ALL_SCUDO_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(FUZZER_SUPPORTED_ARCH
+    ALL_FUZZER_SUPPORTED_ARCH
+    ALL_SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(XRAY_SUPPORTED_ARCH
     ALL_XRAY_SUPPORTED_ARCH
-		SANITIZER_COMMON_SUPPORTED_ARCH)
+    SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(SHADOWCALLSTACK_SUPPORTED_ARCH
+    ALL_SHADOWCALLSTACK_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
+
 else()
   # Architectures supported by compiler-rt libraries.
   filter_available_targets(SANITIZER_COMMON_SUPPORTED_ARCH
@@ -373,9 +446,11 @@ else()
   filter_available_targets(UBSAN_COMMON_SUPPORTED_ARCH
     ${SANITIZER_COMMON_SUPPORTED_ARCH})
   filter_available_targets(ASAN_SUPPORTED_ARCH ${ALL_ASAN_SUPPORTED_ARCH})
+  filter_available_targets(FUZZER_SUPPORTED_ARCH ${ALL_FUZZER_SUPPORTED_ARCH})
   filter_available_targets(DFSAN_SUPPORTED_ARCH ${ALL_DFSAN_SUPPORTED_ARCH})
   filter_available_targets(LSAN_SUPPORTED_ARCH ${ALL_LSAN_SUPPORTED_ARCH})
   filter_available_targets(MSAN_SUPPORTED_ARCH ${ALL_MSAN_SUPPORTED_ARCH})
+  filter_available_targets(HWASAN_SUPPORTED_ARCH ${ALL_HWASAN_SUPPORTED_ARCH})
   filter_available_targets(PROFILE_SUPPORTED_ARCH ${ALL_PROFILE_SUPPORTED_ARCH})
   filter_available_targets(TSAN_SUPPORTED_ARCH ${ALL_TSAN_SUPPORTED_ARCH})
   filter_available_targets(UBSAN_SUPPORTED_ARCH ${ALL_UBSAN_SUPPORTED_ARCH})
@@ -383,9 +458,10 @@ else()
     ${ALL_SAFESTACK_SUPPORTED_ARCH})
   filter_available_targets(CFI_SUPPORTED_ARCH ${ALL_CFI_SUPPORTED_ARCH})
   filter_available_targets(ESAN_SUPPORTED_ARCH ${ALL_ESAN_SUPPORTED_ARCH})
-  filter_available_targets(SCUDO_SUPPORTED_ARCH
-    ${ALL_SCUDO_SUPPORTED_ARCH})
+  filter_available_targets(SCUDO_SUPPORTED_ARCH ${ALL_SCUDO_SUPPORTED_ARCH})
   filter_available_targets(XRAY_SUPPORTED_ARCH ${ALL_XRAY_SUPPORTED_ARCH})
+  filter_available_targets(SHADOWCALLSTACK_SUPPORTED_ARCH
+    ${ALL_SHADOWCALLSTACK_SUPPORTED_ARCH})
 endif()
 
 if (MSVC)
@@ -402,6 +478,9 @@ endif()
 
 find_program(GOLD_EXECUTABLE NAMES ${LLVM_DEFAULT_TARGET_TRIPLE}-ld.gold ld.gold ${LLVM_DEFAULT_TARGET_TRIPLE}-ld ld DOC "The gold linker")
 
+if(COMPILER_RT_SUPPORTED_ARCH)
+  list(REMOVE_DUPLICATES COMPILER_RT_SUPPORTED_ARCH)
+endif()
 message(STATUS "Compiler-RT supported architectures: ${COMPILER_RT_SUPPORTED_ARCH}")
 
 if(ANDROID)
@@ -410,13 +489,13 @@ else()
   set(OS_NAME "${CMAKE_SYSTEM_NAME}")
 endif()
 
-set(ALL_SANITIZERS asan;dfsan;msan;tsan;safestack;cfi;esan;scudo)
-set(COMPILER_RT_SANITIZERS_TO_BUILD ${ALL_SANITIZERS} CACHE STRING
+set(ALL_SANITIZERS asan;dfsan;msan;hwasan;tsan;safestack;cfi;esan;scudo;ubsan_minimal)
+set(COMPILER_RT_SANITIZERS_TO_BUILD all CACHE STRING
     "sanitizers to build if supported on the target (all;${ALL_SANITIZERS})")
 list_replace(COMPILER_RT_SANITIZERS_TO_BUILD all "${ALL_SANITIZERS}")
 
 if (SANITIZER_COMMON_SUPPORTED_ARCH AND NOT LLVM_USE_SANITIZER AND
-    (OS_NAME MATCHES "Android|Darwin|Linux|FreeBSD" OR
+    (OS_NAME MATCHES "Android|Darwin|Linux|FreeBSD|NetBSD|OpenBSD|Fuchsia|SunOS" OR
     (OS_NAME MATCHES "Windows" AND (NOT MINGW AND NOT CYGWIN))))
   set(COMPILER_RT_HAS_SANITIZER_COMMON TRUE)
 else()
@@ -429,13 +508,14 @@ else()
   set(COMPILER_RT_HAS_INTERCEPTION FALSE)
 endif()
 
-if (COMPILER_RT_HAS_SANITIZER_COMMON AND ASAN_SUPPORTED_ARCH)
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND ASAN_SUPPORTED_ARCH AND
+    NOT OS_NAME MATCHES "OpenBSD")
   set(COMPILER_RT_HAS_ASAN TRUE)
 else()
   set(COMPILER_RT_HAS_ASAN FALSE)
 endif()
 
-if (OS_NAME MATCHES "Linux|FreeBSD|Windows")
+if (OS_NAME MATCHES "Linux|FreeBSD|Windows|NetBSD|SunOS")
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME TRUE)
 else()
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME FALSE)
@@ -451,49 +531,62 @@ else()
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND LSAN_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Linux|FreeBSD")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|NetBSD")
   set(COMPILER_RT_HAS_LSAN TRUE)
 else()
   set(COMPILER_RT_HAS_LSAN FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND MSAN_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Linux")
+    OS_NAME MATCHES "Linux|FreeBSD|NetBSD")
   set(COMPILER_RT_HAS_MSAN TRUE)
 else()
   set(COMPILER_RT_HAS_MSAN FALSE)
 endif()
 
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND HWASAN_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Linux|Android")
+  set(COMPILER_RT_HAS_HWASAN TRUE)
+else()
+  set(COMPILER_RT_HAS_HWASAN FALSE)
+endif()
+
 if (PROFILE_SUPPORTED_ARCH AND NOT LLVM_USE_SANITIZER AND
-    OS_NAME MATCHES "Darwin|Linux|FreeBSD|Windows")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|Windows|Android|SunOS")
   set(COMPILER_RT_HAS_PROFILE TRUE)
 else()
   set(COMPILER_RT_HAS_PROFILE FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND TSAN_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Darwin|Linux|FreeBSD")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|Android|NetBSD")
   set(COMPILER_RT_HAS_TSAN TRUE)
 else()
   set(COMPILER_RT_HAS_TSAN FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND UBSAN_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Darwin|Linux|FreeBSD|Windows")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|NetBSD|OpenBSD|Windows|Android|Fuchsia|SunOS")
   set(COMPILER_RT_HAS_UBSAN TRUE)
 else()
   set(COMPILER_RT_HAS_UBSAN FALSE)
 endif()
 
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND UBSAN_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Linux|FreeBSD|NetBSD|OpenBSD|Android|Darwin")
+  set(COMPILER_RT_HAS_UBSAN_MINIMAL TRUE)
+else()
+  set(COMPILER_RT_HAS_UBSAN_MINIMAL FALSE)
+endif()
+
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND SAFESTACK_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Darwin|Linux|FreeBSD")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|NetBSD")
   set(COMPILER_RT_HAS_SAFESTACK TRUE)
 else()
   set(COMPILER_RT_HAS_SAFESTACK FALSE)
 endif()
 
-if (COMPILER_RT_HAS_SANITIZER_COMMON AND CFI_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Linux")
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND CFI_SUPPORTED_ARCH)
   set(COMPILER_RT_HAS_CFI TRUE)
 else()
   set(COMPILER_RT_HAS_CFI FALSE)
@@ -507,15 +600,29 @@ else()
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND SCUDO_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Linux")
+    OS_NAME MATCHES "Linux|Android|Fuchsia")
   set(COMPILER_RT_HAS_SCUDO TRUE)
 else()
   set(COMPILER_RT_HAS_SCUDO FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND XRAY_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Linux")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|NetBSD|OpenBSD")
   set(COMPILER_RT_HAS_XRAY TRUE)
 else()
   set(COMPILER_RT_HAS_XRAY FALSE)
+endif()
+
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND FUZZER_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Android|Darwin|Linux|NetBSD|FreeBSD|OpenBSD|Fuchsia")
+  set(COMPILER_RT_HAS_FUZZER TRUE)
+else()
+  set(COMPILER_RT_HAS_FUZZER FALSE)
+endif()
+
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND SHADOWCALLSTACK_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Linux|Android")
+  set(COMPILER_RT_HAS_SHADOWCALLSTACK TRUE)
+else()
+  set(COMPILER_RT_HAS_SHADOWCALLSTACK FALSE)
 endif()

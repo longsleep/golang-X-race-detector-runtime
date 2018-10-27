@@ -65,6 +65,11 @@ extern "C" {
   void __sanitizer_unaligned_store32(void *p, uint32_t x);
   void __sanitizer_unaligned_store64(void *p, uint64_t x);
 
+  // Returns 1 on the first call, then returns 0 thereafter.  Called by the tool
+  // to ensure only one report is printed when multiple errors occur
+  // simultaneously.
+  int __sanitizer_acquire_crash_state();
+
   // Annotate the current state of a contiguous container, such as
   // std::vector, std::string or similar.
   // A contiguous container is a container that keeps all of its elements
@@ -115,7 +120,7 @@ extern "C" {
       const void *beg, const void *mid, const void *end);
 
   // Print the stack trace leading to this call. Useful for debugging user code.
-  void __sanitizer_print_stack_trace();
+  void __sanitizer_print_stack_trace(void);
 
   // Symbolizes the supplied 'pc' using the format string 'fmt'.
   // Outputs at most 'out_buf_size' bytes into 'out_buf'.
@@ -158,8 +163,10 @@ extern "C" {
   // Prints stack traces for all live heap allocations ordered by total
   // allocation size until `top_percent` of total live heap is shown.
   // `top_percent` should be between 1 and 100.
+  // At most `max_number_of_contexts` contexts (stack traces) is printed.
   // Experimental feature currently available only with asan on Linux/x86_64.
-  void __sanitizer_print_memory_profile(size_t top_percent);
+  void __sanitizer_print_memory_profile(size_t top_percent,
+                                        size_t max_number_of_contexts);
 
   // Fiber annotation interface.
   // Before switching to a different stack, one must call
@@ -182,6 +189,13 @@ extern "C" {
   void __sanitizer_finish_switch_fiber(void *fake_stack_save,
                                        const void **bottom_old,
                                        size_t *size_old);
+
+  // Get full module name and calculate pc offset within it.
+  // Returns 1 if pc belongs to some module, 0 if module was not found.
+  int __sanitizer_get_module_and_offset_for_pc(void *pc, char *module_path,
+                                               size_t module_path_len,
+                                               void **pc_offset);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -4,13 +4,15 @@ include(CheckCSourceCompiles)
 # Make all the tests only check the compiler
 set(TEST_COMPILE_ONLY On)
 
+# Check host compiler support for certain flags
 builtin_check_c_compiler_flag(-fPIC                 COMPILER_RT_HAS_FPIC_FLAG)
 builtin_check_c_compiler_flag(-fPIE                 COMPILER_RT_HAS_FPIE_FLAG)
 builtin_check_c_compiler_flag(-fno-builtin          COMPILER_RT_HAS_FNO_BUILTIN_FLAG)
-builtin_check_c_compiler_flag(-std=c99              COMPILER_RT_HAS_STD_C99_FLAG)
+builtin_check_c_compiler_flag(-std=c11              COMPILER_RT_HAS_STD_C11_FLAG)
 builtin_check_c_compiler_flag(-fvisibility=hidden   COMPILER_RT_HAS_VISIBILITY_HIDDEN_FLAG)
 builtin_check_c_compiler_flag(-fomit-frame-pointer  COMPILER_RT_HAS_OMIT_FRAME_POINTER_FLAG)
 builtin_check_c_compiler_flag(-ffreestanding        COMPILER_RT_HAS_FREESTANDING_FLAG)
+builtin_check_c_compiler_flag(-fxray-instrument     COMPILER_RT_HAS_XRAY_COMPILER_FLAG)
 
 builtin_check_c_compiler_source(COMPILER_RT_HAS_ATOMIC_KEYWORD
 "
@@ -22,12 +24,15 @@ int foo(int x, int y) {
 
 
 set(ARM64 aarch64)
-set(ARM32 arm armhf)
-set(X86 i386 i686)
+set(ARM32 arm armhf armv6m armv7m armv7em armv7 armv7s armv7k)
+set(HEXAGON hexagon)
+set(X86 i386)
 set(X86_64 x86_64)
 set(MIPS32 mips mipsel)
 set(MIPS64 mips64 mips64el)
 set(PPC64 powerpc64 powerpc64le)
+set(RISCV32 riscv32)
+set(RISCV64 riscv64)
 set(WASM32 wasm32)
 set(WASM64 wasm64)
 
@@ -38,7 +43,7 @@ if(APPLE)
 endif()
 
 set(ALL_BUILTIN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
-    ${MIPS32} ${MIPS64} ${WASM32} ${WASM64})
+    ${HEXAGON} ${MIPS32} ${MIPS64} ${PPC64} ${RISCV32} ${RISCV64} ${WASM32} ${WASM64})
 
 include(CompilerRTUtils)
 include(CompilerRTDarwinUtils)

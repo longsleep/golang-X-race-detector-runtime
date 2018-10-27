@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// FIXME: Doesn't work with DLLs
+// XFAIL: win32-dynamic-asan
+
 int main() {
   // Disable stderr buffering. Needed on Windows.
   setvbuf(stderr, NULL, _IONBF, 0);
@@ -27,6 +30,9 @@ int main() {
 # else
 #  define PTR_FMT "0x%08x"
 # endif
+// Solaris libc omits the leading 0x.
+#elif defined(__sun__) && defined(__svr4__)
+# define PTR_FMT "0x%p"
 #else
 # define PTR_FMT "%p"
 #endif
